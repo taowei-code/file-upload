@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+
+<body>
+  <div id="app">
+    <input type="file" />
+    <button id="btn">上传</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+  <script>
+    var app = new Vue({
+      el: '#app',
+      data: {
+        message: 'Hello Vue!'
+      }
+    })
+
+    const oInput = document.querySelector('[type = file]')
+    const oButton = document.querySelector('#btn')
+    let file
+    let data
+    const fileChunkList = [];
+
+    oInput.addEventListener('change', function (e) {
+      file = e.target.files[0]
+      console.log(file)
+    })
+    oButton.addEventListener('click', function (e) {
+      handleUpload(file)
+    })
+
+    function request({
+      url,
+      method = "post",
+      data,
+      headers = {},
+      requestList
+    }) {
+      return new Promise(resolve => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, url);
+        Object.keys(headers).forEach(key =>
+          xhr.setRequestHeader(key, headers[key])
+        );
+        xhr.send(data);
+        xhr.onload = e => {
+          resolve({
+            data: e.target.response
+          });
+        };
+      });
+    }
+
+    const SIZE = 1024 * 1024 * 5; // 5M
+
+    // 生成文件切片
+    function createFileChunk(file, size = SIZE) {
+      const fileChunkList = []
+      let cur = 0;
+      while (cur < file.size) {
+        fileChunkList.push({ file: { ...(file.slice(cur, cur + size)), name: file.name } });
+        cur += size;
+      }
+
+      return fileChunkList
+    }
+
+    // 上传切片
+    async function uploadChunks() {
+      const requestList = data
+        .map(({ chunk, hash }) => {
+          const formData = new FormData();
+          formData.append("chunk", chunk);
+          formData.append("hash", hash);
+          formData.append("filename", file.name);
+          return { formData };
+        })
+        .map(({ formData }) =>
+          request({
+            url: "http://localhost:1234",
+            data: formData
+          })
+        );
+      await Promise.all(requestList);
+      await mergeRequest();
+    }
+
+    async function mergeRequest() {
+      await request({
+        url: "http://localhost:1234/merge",
+        headers: {
+          "content-type": "application/json"
+        },
+        data: JSON.stringify({
+          size: SIZE,
+          filename: file.name
+        })
+      })
+    }
+
+
+
+    async function handleUpload() {
+      if (!file) return;
+      const fileChunkList = createFileChunk(file);
+      data = fileChunkList.map(({ file }, index) => ({
+        chunk: file,
+        // 文件名 + 数组下标
+        hash: file.name + "-" + index
+      }));
+      uploadChunks()
+    }
+
+  </script>
+</body>
+
+</html>
